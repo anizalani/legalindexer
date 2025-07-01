@@ -1,0 +1,125 @@
+name: Legal Document Index Generator (Docker)
+on:
+  workflow_dispatch:
+    inputs:
+      input_pdf_path:
+        description: 'Path to input PDF file (relative to repository or absolute on runner)'
+        required: true
+        type: string
+        default: 'documents/sample.pdf'
+      output_filename:
+        description: 'Output filename (will be saved to output directory)'
+        required: false
+        type: string
+        default: 'legal_index.txt'
+      output_format:
+        description: 'Output format'
+        required: false
+        type: choice
+        options:
+          - text
+          - json
+        default: text
+      include_subcategories:
+        description: 'Include subcategory details in output'
+        required: false
+        type: boolean
+        default: true
+      show_stats:
+        description: 'Print indexing statistics'
+        required: false
+        type: boolean
+        default: true
+      output_directory:
+        description: 'Output directory path on runner'
+        required: false
+        type: string
+        default: '/mnt/user/legal_indexes'
+
+jobs:
+  generate-index:
+    runs-on: [self-hosted]
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare directories
+        run: |
+          # Create output directory
+          mkdir -p "${{ github.event.inputs.output_directory }}"
+          
+          # Create temp input directory for Docker
+          mkdir -p ./docker_input
+          
+          # Determine input file path
+          INPUT_PATH="${{ github.event.inputs.input_pdf_path }}"
+          
+          # If it's a relative path, assume it's in the repo
+          if [[ ! "$INPUT_PATH" = /* ]]; then
+            INPUT_PATH="./$INPUT_PATH"
+          fi
+          
+          # Verify input file exists
+          if [ ! -f "$INPUT_PATH" ]; then
+            echo "Error: Input PDF file '$INPUT_PATH' does not exist"
+            exit 1
+          fi
+          
+          # Copy input file to docker input directory
+          cp "$INPUT_PATH" ./docker_input/document.pdf
+          echo "INPUT_FILE_BASENAME=$(basename "$INPUT_PATH")" >> $GITHUB_ENV
+
+      - name: Build Docker image
+        run: |
+          docker build -t legal-index-generator .
+
+      - name: Run legal index generator
+        run: |
+          docker run --rm \
+            -v "$(pwd)/docker_input:/input:ro" \
+            -v "${{ github.event.inputs.output_directory }}:/output" \
+            -e INPUT_PDF="/input/document.pdf" \
+            -e OUTPUT_FILE="/output/${{ github.event.inputs.output_filename }}" \
+            -e OUTPUT_FORMAT="${{ github.event.inputs.output_format }}" \
+            -e INCLUDE_SUBCATEGORIES="${{ github.event.inputs.include_subcategories }}" \
+            -e SHOW_STATS="${{ github.event.inputs.show_stats }}" \
+            legal-index-generator
+
+      - name: Verify output and show summary
+        run: |
+          OUTPUT_FILE="${{ github.event.inputs.output_directory }}/${{ github.event.inputs.output_filename }}"
+          
+          if [ -f "$OUTPUT_FILE" ]; then
+            echo "✅ Legal index generated successfully!"
+            echo "📄 Input PDF: ${{ github.event.inputs.input_pdf_path }}"
+            echo "📄 Output file: $OUTPUT_FILE"
+            echo "📊 File size: $(du -h "$OUTPUT_FILE" | cut -f1)"
+            echo "🔧 Format: ${{ github.event.inputs.output_format }}"
+            
+            # Set permissions for access
+            chmod 644 "$OUTPUT_FILE"
+            
+            echo ""
+            echo "📁 File details:"
+            ls -la "$OUTPUT_FILE"
+          else
+            echo "❌ Error: Output file was not created at $OUTPUT_FILE"
+            exit 1
+          fi
+
+      - name: Upload index as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: legal-index-${{ github.run_number }}-${{ github.event.inputs.output_format }}
+          path: ${{ github.event.inputs.output_directory }}/${{ github.event.inputs.output_filename }}
+          retention-days: 30
+
+      - name: Cleanup
+        if: always()
+        run: |
+          # Clean up temporary files
+          rm -rf ./docker_input
+          
+          # Clean up Docker image
+          docker rmi legal-index-generator || true
