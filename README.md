@@ -18,7 +18,7 @@ A comprehensive tool for extracting and indexing legal concepts, terms, and rule
 
 ```bash
 # Clone the repository
-git clone <your-repo-url>
+git clone https://github.com/anizalani/legalindexer.git
 cd legal-index-generator
 
 # Build the Docker image
@@ -36,7 +36,7 @@ docker run --rm \
 ### Option 2: Local Installation
 
 ```bash
-# Clone the repository
+# Clone the sitory
 git clone anizalani/legalindexer
 cd legal-index-generator
 
@@ -52,13 +52,13 @@ python legal_index.py document.pdf -o legal_index.txt --stats
 ### Docker Installation
 
 1. **Prerequisites**: Docker installed on your system
-2. **Clone repository**: `git clone <your-repo-url>`
+2. **Clone repository**: `git clone https://github.com/anizalani/legalindexer.git
 3. **Build image**: `docker build -t legal-indexer .`
 
 ### Local Python Installation
 
 1. **Prerequisites**: Python 3.8+ installed
-2. **Clone repository**: `git clone <your-repo-url>`
+2. **Clone repository**: `git clone https://github.com/anizalani/legalindexer.git
 3. **Install dependencies**: `pip install -r requirements.txt`
 
 ## Usage
