@@ -1,4 +1,3 @@
-
 services:
   legal-indexer:
     build: .
