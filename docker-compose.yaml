@@ -1,0 +1,15 @@
+
+services:
+  legal-indexer:
+    build: .
+    volumes:
+      - ./input:/input:ro
+      - ./output:/output
+    environment:
+      - INPUT_PDF=/input/document.pdf
+      - OUTPUT_FILE=/output/legal_index.txt
+      - OUTPUT_FORMAT=text
+      - INCLUDE_SUBCATEGORIES=true
+      - SHOW_STATS=true
+    # Optional: Override for custom terms
+    # - CUSTOM_TERMS_FILE=/input/custom_terms.json
