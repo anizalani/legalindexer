@@ -1,5 +1,3 @@
-#ventrypoint.sh
-
 #!/bin/bash
 
 # Legal Index Generator Docker Entrypoint
@@ -71,11 +69,11 @@ if [ -f "$OUTPUT_FILE" ]; then
     echo "✅ Legal index generated successfully!"
     echo "📄 Output file: $OUTPUT_FILE"
     echo "📊 File size: $(du -h "$OUTPUT_FILE" | cut -f1)"
-    
+
     # Show file details
     echo "📁 File details:"
     ls -la "$OUTPUT_FILE"
-    
+
     # Show preview if text format
     if [ "${OUTPUT_FORMAT,,}" != "json" ]; then
         echo ""
