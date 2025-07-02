@@ -40,6 +40,11 @@ if [ "${INCLUDE_SUBCATEGORIES,,}" = "false" ]; then
     ARGS+=("--no-subcategories")
 fi
 
+# Add terms-only flag if enabled
+if [ "${TERMS_ONLY,,}" = "true" ]; then
+    ARGS+=("--terms-only")
+fi
+
 # Add stats flag if enabled
 if [ "${SHOW_STATS,,}" = "true" ]; then
     ARGS+=("--stats")
@@ -55,6 +60,7 @@ echo "Input PDF: $INPUT_PDF"
 echo "Output File: $OUTPUT_FILE"
 echo "Output Format: $OUTPUT_FORMAT"
 echo "Include Subcategories: $INCLUDE_SUBCATEGORIES"
+echo "Terms Only: $TERMS_ONLY"
 echo "Show Stats: $SHOW_STATS"
 echo "Page Offset: $PAGE_OFFSET"
 

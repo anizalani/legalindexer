@@ -13,8 +13,8 @@ from legal_indexer.indexer import LegalIndexer
 from legal_indexer.utils import save_output, get_statistics
 
 class LegalIndexGenerator:
-    def __init__(self, page_offset: int = 0):
-        self.indexer = LegalIndexer(page_offset=page_offset)
+    def __init__(self, page_offset: int = 0, terms_only: bool = False):
+        self.indexer = LegalIndexer(page_offset=page_offset, terms_only=terms_only)
         self.page_content = {}
 
     def process_document(self, pdf_path: str):
@@ -52,6 +52,7 @@ Examples:
   python -m legal_indexer.main document.pdf -o my_index.pdf
   python -m legal_indexer.main document.pdf --format json -o index.json
   python -m legal_indexer.main document.pdf --no-subcategories
+  python -m legal_indexer.main document.pdf --terms-only
         """
     )
     
@@ -62,6 +63,8 @@ Examples:
                        help='Output format (default: auto-detect from output file extension)')
     parser.add_argument('--no-subcategories', action='store_true',
                        help='Exclude subcategory details in text output')
+    parser.add_argument('--terms-only', action='store_true',
+                        help='Only index defined terms, excluding case and statutory references')
     parser.add_argument('--stats', action='store_true',
                        help='Print statistics about the indexing')
     parser.add_argument('--page-offset', type=int, default=0,
@@ -80,7 +83,7 @@ Examples:
                 output_format = 'text'
 
         # Create and run the generator
-        generator = LegalIndexGenerator(page_offset=args.page_offset)
+        generator = LegalIndexGenerator(page_offset=args.page_offset, terms_only=args.terms_only)
         generator.process_document(args.input_pdf)
         
         # Save output
@@ -89,7 +92,8 @@ Examples:
             generator.indexer.index,
             generator.indexer.cross_references,
             format=output_format, 
-            include_subcategories=not args.no_subcategories
+            include_subcategories=not args.no_subcategories,
+            terms_only=args.terms_only
         )
         
         # Print statistics if requested

@@ -206,3 +206,26 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Project-specific
+/output/*
+!/output/.gitkeep
+/input/*
+!/input/.gitkeep
+/venv/
+/build/
+/dist/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.idea/
+.vscode/
+*.log
+*.sqlite3
+*.tar.gz
+*.dump
+*.bak
+*.swp
+*~
+.DS_Store

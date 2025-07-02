@@ -4,33 +4,35 @@ from typing import Dict, List
 from legal_indexer.config import STATUTORY_PATTERNS, CASE_LAW_PATTERNS, GENERAL_PATTERNS, PHRASE_PATTERNS, DEFAULT_LEGAL_TERMS
 
 class LegalIndexer:
-    def __init__(self, legal_terms: Dict[str, List[str]] = None, page_offset: int = 0):
+    def __init__(self, legal_terms: Dict[str, List[str]] = None, page_offset: int = 0, terms_only: bool = False):
         self.legal_terms = legal_terms or DEFAULT_LEGAL_TERMS
         self.index = defaultdict(lambda: defaultdict(set))
         self.cross_references = defaultdict(set)
         self.page_offset = page_offset
+        self.terms_only = terms_only
 
     def identify_legal_concepts(self, text: str, page_num: int):
         """Identify and index legal concepts with improved accuracy."""
         page_num += self.page_offset
 
-        # Process statutory patterns
-        for category, patterns in STATUTORY_PATTERNS.items():
-            for pattern in patterns:
-                for match in re.finditer(pattern, text, re.IGNORECASE):
-                    term = match.group().strip()
-                    if not term.isnumeric():
-                        self.index[term][category].add(page_num)
-                        self.index[term]['all_references'].add(page_num)
+        if not self.terms_only:
+            # Process statutory patterns
+            for category, patterns in STATUTORY_PATTERNS.items():
+                for pattern in patterns:
+                    for match in re.finditer(pattern, text, re.IGNORECASE):
+                        term = match.group().strip()
+                        if not term.isnumeric():
+                            self.index[term][category].add(page_num)
+                            self.index[term]['all_references'].add(page_num)
 
-        # Process case law patterns
-        for category, patterns in CASE_LAW_PATTERNS.items():
-            for pattern in patterns:
-                for match in re.finditer(pattern, text, re.IGNORECASE):
-                    term = match.group().strip()
-                    if not term.isnumeric():
-                        self.index[term][category].add(page_num)
-                        self.index[term]['all_references'].add(page_num)
+            # Process case law patterns
+            for category, patterns in CASE_LAW_PATTERNS.items():
+                for pattern in patterns:
+                    for match in re.finditer(pattern, text, re.IGNORECASE):
+                        term = match.group().strip()
+                        if not term.isnumeric():
+                            self.index[term][category].add(page_num)
+                            self.index[term]['all_references'].add(page_num)
 
         # Process general patterns
         for category, pattern in GENERAL_PATTERNS.items():

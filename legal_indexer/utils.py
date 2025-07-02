@@ -8,12 +8,19 @@ from docx import Document
 from lxml import etree
 
 class Exporter:
-    def __init__(self, index: Dict, cross_references: Dict):
+    def __init__(self, index: Dict, cross_references: Dict, terms_only: bool = False):
         self.index = index
         self.cross_references = cross_references
-        self.case_law_references = {k: v for k, v in index.items() if 'case_law_references' in v}
-        self.statutory_references = {k: v for k, v in index.items() if 'statutory_references' in v}
-        self.subject_matter_index = {k: v for k, v in index.items() if 'case_law_references' not in v and 'statutory_references' not in v}
+        self.terms_only = terms_only
+        
+        if self.terms_only:
+            self.case_law_references = {}
+            self.statutory_references = {}
+            self.subject_matter_index = {k: v for k, v in index.items()}
+        else:
+            self.case_law_references = {k: v for k, v in index.items() if 'case_law_references' in v}
+            self.statutory_references = {k: v for k, v in index.items() if 'statutory_references' in v}
+            self.subject_matter_index = {k: v for k, v in index.items() if 'case_law_references' not in v and 'statutory_references' not in v}
 
     def _format_entry(self, term, pages):
         return f"{term}: {', '.join(map(str, sorted(list(pages))))}"
@@ -23,19 +30,20 @@ class Exporter:
         output = "COMPREHENSIVE LEGAL INDEX\n"
         output += "=" * 50 + "\n\n"
 
-        # Case Law References
-        output += "CASE LAW REFERENCES\n"
-        output += "-" * 50 + "\n"
-        for term, data in sorted(self.case_law_references.items()):
-            output += self._format_entry(term, data['all_references']) + "\n"
-        output += "\n"
+        if not self.terms_only:
+            # Case Law References
+            output += "CASE LAW REFERENCES\n"
+            output += "-" * 50 + "\n"
+            for term, data in sorted(self.case_law_references.items()):
+                output += self._format_entry(term, data['all_references']) + "\n"
+            output += "\n"
 
-        # Statutory References
-        output += "STATUTORY REFERENCES\n"
-        output += "-" * 50 + "\n"
-        for term, data in sorted(self.statutory_references.items()):
-            output += self._format_entry(term, data['all_references']) + "\n"
-        output += "\n"
+            # Statutory References
+            output += "STATUTORY REFERENCES\n"
+            output += "-" * 50 + "\n"
+            for term, data in sorted(self.statutory_references.items()):
+                output += self._format_entry(term, data['all_references']) + "\n"
+            output += "\n"
 
         # Index by Subject
         output += "INDEX BY SUBJECT\n"
@@ -56,19 +64,27 @@ class Exporter:
         # Alphabetical Index
         output += "ALPHABETICAL INDEX\n"
         output += "-" * 50 + "\n"
-        for term, data in sorted(self.index.items()):
+        
+        index_source = self.subject_matter_index if self.terms_only else self.index
+        for term, data in sorted(index_source.items()):
             output += self._format_entry(term, data['all_references']) + "\n"
         
         return output
 
     def to_json(self) -> str:
         """Convert index to JSON format with the new structure."""
-        json_data = {
-            'case_law_references': {k: sorted(list(v['all_references'])) for k, v in self.case_law_references.items()},
-            'statutory_references': {k: sorted(list(v['all_references'])) for k, v in self.statutory_references.items()},
-            'subject_matter_index': {k: {cat: sorted(list(pages)) for cat, pages in v.items()} for k, v in self.subject_matter_index.items()},
-            '_cross_references': {k: sorted(list(v)) for k, v in self.cross_references.items()}
-        }
+        if self.terms_only:
+            json_data = {
+                'subject_matter_index': {k: {cat: sorted(list(pages)) for cat, pages in v.items()} for k, v in self.subject_matter_index.items()},
+                '_cross_references': {k: sorted(list(v)) for k, v in self.cross_references.items()}
+            }
+        else:
+            json_data = {
+                'case_law_references': {k: sorted(list(v['all_references'])) for k, v in self.case_law_references.items()},
+                'statutory_references': {k: sorted(list(v['all_references'])) for k, v in self.statutory_references.items()},
+                'subject_matter_index': {k: {cat: sorted(list(pages)) for cat, pages in v.items()} for k, v in self.subject_matter_index.items()},
+                '_cross_references': {k: sorted(list(v)) for k, v in self.cross_references.items()}
+            }
         return json.dumps(json_data, indent=2, ensure_ascii=False)
 
     def to_pdf(self, path: str):
@@ -90,15 +106,16 @@ class Exporter:
         doc = Document()
         doc.add_heading('Comprehensive Legal Index', 0)
         
-        # Case Law References
-        doc.add_heading('Case Law References', level=1)
-        for term, data in sorted(self.case_law_references.items()):
-            doc.add_paragraph(self._format_entry(term, data['all_references']))
+        if not self.terms_only:
+            # Case Law References
+            doc.add_heading('Case Law References', level=1)
+            for term, data in sorted(self.case_law_references.items()):
+                doc.add_paragraph(self._format_entry(term, data['all_references']))
 
-        # Statutory References
-        doc.add_heading('Statutory References', level=1)
-        for term, data in sorted(self.statutory_references.items()):
-            doc.add_paragraph(self._format_entry(term, data['all_references']))
+            # Statutory References
+            doc.add_heading('Statutory References', level=1)
+            for term, data in sorted(self.statutory_references.items()):
+                doc.add_paragraph(self._format_entry(term, data['all_references']))
 
         # Index by Subject
         doc.add_heading('Index by Subject', level=1)
@@ -115,7 +132,8 @@ class Exporter:
 
         # Alphabetical Index
         doc.add_heading('Alphabetical Index', level=1)
-        for term, data in sorted(self.index.items()):
+        index_source = self.subject_matter_index if self.terms_only else self.index
+        for term, data in sorted(index_source.items()):
             doc.add_paragraph(self._format_entry(term, data['all_references']))
         
         doc.save(path)
@@ -126,7 +144,8 @@ class Exporter:
             writer = csv.writer(f)
             writer.writerow(['Term', 'Category', 'Pages'])
             
-            for term, data in sorted(self.index.items()):
+            index_source = self.subject_matter_index if self.terms_only else self.index
+            for term, data in sorted(index_source.items()):
                 for cat, pages in data.items():
                     if pages:
                         writer.writerow([term, cat, ', '.join(map(str, sorted(list(pages))))])
@@ -135,15 +154,16 @@ class Exporter:
         """Generate an XML version of the index."""
         root = etree.Element('LegalIndex')
         
-        # Case Law
-        case_law_root = etree.SubElement(root, 'CaseLawReferences')
-        for term, data in sorted(self.case_law_references.items()):
-            etree.SubElement(case_law_root, 'Reference', name=term).text = ', '.join(map(str, sorted(list(data['all_references']))))
+        if not self.terms_only:
+            # Case Law
+            case_law_root = etree.SubElement(root, 'CaseLawReferences')
+            for term, data in sorted(self.case_law_references.items()):
+                etree.SubElement(case_law_root, 'Reference', name=term).text = ', '.join(map(str, sorted(list(data['all_references']))))
 
-        # Statutory
-        statutory_root = etree.SubElement(root, 'StatutoryReferences')
-        for term, data in sorted(self.statutory_references.items()):
-            etree.SubElement(statutory_root, 'Reference', name=term).text = ', '.join(map(str, sorted(list(data['all_references']))))
+            # Statutory
+            statutory_root = etree.SubElement(root, 'StatutoryReferences')
+            for term, data in sorted(self.statutory_references.items()):
+                etree.SubElement(statutory_root, 'Reference', name=term).text = ', '.join(map(str, sorted(list(data['all_references']))))
 
         # Subject Matter
         subject_root = etree.SubElement(root, 'SubjectMatterIndex')
@@ -161,15 +181,16 @@ class Exporter:
         with open(path, 'w', encoding='utf-8') as f:
             f.write("# Comprehensive Legal Index\n\n")
 
-            f.write("## Case Law References\n")
-            for term, data in sorted(self.case_law_references.items()):
-                f.write(f"- {self._format_entry(term, data['all_references'])}\n")
-            f.write("\n")
+            if not self.terms_only:
+                f.write("## Case Law References\n")
+                for term, data in sorted(self.case_law_references.items()):
+                    f.write(f"- {self._format_entry(term, data['all_references'])}\n")
+                f.write("\n")
 
-            f.write("## Statutory References\n")
-            for term, data in sorted(self.statutory_references.items()):
-                f.write(f"- {self._format_entry(term, data['all_references'])}\n")
-            f.write("\n")
+                f.write("## Statutory References\n")
+                for term, data in sorted(self.statutory_references.items()):
+                    f.write(f"- {self._format_entry(term, data['all_references'])}\n")
+                f.write("\n")
 
             f.write("## Index by Subject\n")
             subject_index = defaultdict(list)
@@ -185,12 +206,13 @@ class Exporter:
                 f.write("\n")
 
             f.write("## Alphabetical Index\n")
-            for term, data in sorted(self.index.items()):
+            index_source = self.subject_matter_index if self.terms_only else self.index
+            for term, data in sorted(index_source.items()):
                 f.write(f"- {self._format_entry(term, data['all_references'])}\n")
 
-def save_output(path: str, index: Dict, cross_references: Dict, format: str, include_subcategories: bool = True):
+def save_output(path: str, index: Dict, cross_references: Dict, format: str, include_subcategories: bool = True, terms_only: bool = False):
     """Save index output in the specified format."""
-    exporter = Exporter(index, cross_references)
+    exporter = Exporter(index, cross_references, terms_only=terms_only)
     
     try:
         if format == 'text':
