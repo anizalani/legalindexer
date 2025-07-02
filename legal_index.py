@@ -14,7 +14,6 @@ import json
 from typing import Dict, List, Set, Tuple
 import sys
 import os
-import pdfplumber
 
 # Enhanced Legal Patterns
 LEGAL_PATTERNS = {
@@ -157,6 +156,7 @@ DEFAULT_LEGAL_TERMS = {
     ]
 }
 
+
 class LegalIndexGenerator:
     def __init__(self, legal_terms: Dict[str, List[str]] = None):
         self.legal_terms = legal_terms or DEFAULT_LEGAL_TERMS
@@ -261,58 +261,13 @@ class LegalIndexGenerator:
                     if alt in self.index:
                         self.cross_references[main_term].add(alt)
 
-    def extract_internal_page_numbers(self, pdf_path: str) -> dict:
-        """Map PDF (physical) page numbers to internal (printed) numbers by scanning for numbers in header/footer."""
-        import pdfplumber  # You need to have pdfplumber installed!
-        page_map = {}
-        try:
-            import pdfplumber
-        except ImportError:
-            print("pdfplumber not installed, falling back to PDF page numbers.")
-            return {}
-    
-        with pdfplumber.open(pdf_path) as pdf:
-            for i, page in enumerate(pdf.pages):
-                text = ""
-                # Try to extract only header/footer lines, or fallback to all text
-                try:
-                    # Extract bottom 10% of the page for footer page numbers
-                    bbox = (0, page.height * 0.9, page.width, page.height)
-                    lines = page.within_bbox(bbox).extract_text() or ""
-                    text = lines.strip()
-                except Exception:
-                    text = page.extract_text() or ""
-                # Look for a page number (arabic or roman, max 4 chars)
-                match = re.search(r'\b([ivxlcdm\d]{1,4})\b', text, re.IGNORECASE)
-                if match:
-                    page_map[i+1] = match.group(1)
-                else:
-                    page_map[i+1] = None
-        return page_map
-    
     def process_document(self, pdf_path: str):
         """Main processing function with progress indication."""
         print(f"Processing document: {pdf_path}")
         
-    self.page_content = self.extract_text_from_pdf(pdf_path)
-    self.internal_page_map = self.extract_internal_page_numbers(pdf_path)
-    total_pages = len(self.page_content)
-
-        if not all_pages:
-            continue
-
-        output += f"{term}\n"
-
-        if include_subcategories and len(subcategories) > 1:
-            # Show specific subcategories
-            for subcat, pages in sorted(subcategories.items()):
-                if subcat != 'all_references' and pages:
-                    sub_pages = sorted(list(pages))
-                    output += f"  {subcat.replace('_', ' ').title()}: {', '.join(map(str, sub_pages))}\n"
-
-        # Always show all references
-
-
+        self.page_content = self.extract_text_from_pdf(pdf_path)
+        total_pages = len(self.page_content)
+        
         if total_pages == 0:
             print("Error: No pages extracted from PDF")
             return
@@ -352,15 +307,10 @@ class LegalIndexGenerator:
                 for subcat, pages in sorted(subcategories.items()):
                     if subcat != 'all_references' and pages:
                         sub_pages = sorted(list(pages))
-                        output += f"  {subcat.replace('_', ' ').title()}: {', '.join(show_page(pg) for pg in sub_pages)}\n"
+                        output += f"  {subcat.replace('_', ' ').title()}: {', '.join(map(str, sub_pages))}\n"
+            
             # Always show all references
-            # Map to internal page numbers if available
-            def show_page(pg):
-                if hasattr(self, "internal_page_map"):
-                    internal = self.internal_page_map.get(pg)
-                    return f"{internal or pg} [PDF:{pg}]" if internal else str(pg)
-                return str(pg)
-            output += f"  All references: {', '.join(show_page(pg) for pg in all_pages)}\n"            
+            output += f"  All references: {', '.join(map(str, all_pages))}\n"
             
             # Add cross-references if they exist
             if term in self.cross_references:
@@ -418,6 +368,7 @@ class LegalIndexGenerator:
         stats['terms_by_category'] = dict(category_counts)
         return stats
 
+
 def main():
     parser = argparse.ArgumentParser(
         description='Generate comprehensive legal index from PDF documents',
@@ -471,6 +422,7 @@ Examples:
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)
+
 
 if __name__ == '__main__':
     main()
