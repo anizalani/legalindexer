@@ -5,7 +5,7 @@ A comprehensive tool for extracting and indexing legal concepts, terms, and rule
 ## Features
 
 - **Comprehensive Term Recognition**: Identifies NY statutes, CPLR/CPL rules, case citations, and legal terminology
-- **Multiple Output Formats**: Generate indexes in text or JSON format
+- **Multiple Output Formats**: Generate indexes in text, JSON, PDF, DOCX, CSV, XML, and Markdown formats.
 - **Categorized Results**: Terms organized by legal categories (civil procedure, contracts, torts, etc.)
 - **Cross-References**: Automatic linking of related legal concepts
 - **Statistics**: Detailed analysis of indexed content
@@ -97,19 +97,19 @@ docker-compose up
 
 #### Basic Usage
 ```bash
-python legal_index.py document.pdf
+legal-indexer document.pdf
 ```
 
 #### Advanced Options
 ```bash
-# JSON output with statistics
-python legal_index.py document.pdf -o index.json --json --stats
+# PDF output with statistics
+legal-indexer document.pdf -o index.pdf --stats
 
 # Text output without subcategories
-python legal_index.py document.pdf -o simple_index.txt --no-subcategories
+legal-indexer document.pdf -o simple_index.txt --no-subcategories
 
 # Show help
-python legal_index.py --help
+legal-indexer --help
 ```
 
 ## Environment Variables (Docker)
@@ -117,10 +117,11 @@ python legal_index.py --help
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `INPUT_PDF` | `/input/document.pdf` | Path to input PDF file |
-| `OUTPUT_FILE` | `/output/legal_index.txt` | Path for output index file |
-| `OUTPUT_FORMAT` | `text` | Output format: `text` or `json` |
+| `OUTPUT_FILE` | `/output/legal_index.txt` | Path for output index file. The format is determined by the file extension. |
+| `OUTPUT_FORMAT` |_(empty)_| Force a specific output format (e.g., `pdf`, `docx`). Overrides file extension detection. |
 | `INCLUDE_SUBCATEGORIES` | `true` | Include detailed subcategories |
 | `SHOW_STATS` | `true` | Display indexing statistics |
+| `PAGE_OFFSET` | `0` | Offset for page numbers (e.g., -4 if content starts on page 5) |
 | `CUSTOM_TERMS_FILE` | _(empty)_ | Path to custom terms JSON file |
 
 ## Command Line Options (Local)
@@ -128,10 +129,11 @@ python legal_index.py --help
 | Option | Description |
 |--------|-------------|
 | `input_pdf` | Path to input PDF file (required) |
-| `-o, --output` | Output file path (default: `legal_index.txt`) |
-| `-j, --json` | Save output as JSON format |
+| `-o, --output` | Output file path (default: `legal_index.txt`). The format is determined by the file extension. |
+| `-f, --format` | Force a specific output format (e.g., `pdf`, `docx`). Overrides file extension detection. |
 | `--no-subcategories` | Exclude subcategory details |
 | `--stats` | Print indexing statistics |
+| `--page-offset` | Offset for page numbers (e.g., -4 if content starts on page 5) |
 
 ## GitHub Actions Integration
 
@@ -182,26 +184,57 @@ The workflow will process your PDF and save the index as a downloadable artifact
 COMPREHENSIVE LEGAL INDEX
 ==================================================
 
-Summary Judgment
-  Civil Procedure: 5, 12, 18
-  All references: 5, 12, 18, 22
+CASE LAW REFERENCES
+--------------------------------------------------
+People v. Smith: 10, 25
+Jones v. ABC Corp.: 15
 
-New York Civil Practice Law § 3212
-  Ny Statutes: 12
-  All references: 12
+STATUTORY REFERENCES
+--------------------------------------------------
+CPLR § 3212: 5, 12, 18
+New York Judiciary Law § 487: 22
+
+INDEX BY SUBJECT
+--------------------------------------------------
+
+-- Civil Procedure --
+Summary Judgment: 5, 12, 18
+
+-- Torts --
+Negligence: 30, 45
+
+ALPHABETICAL INDEX
+--------------------------------------------------
+CPLR § 3212: 5, 12, 18
+Jones v. ABC Corp.: 15
+Negligence: 30, 45
+New York Judiciary Law § 487: 22
+People v. Smith: 10, 25
+Summary Judgment: 5, 12, 18
 ```
 
 ### JSON Format
 ```json
 {
-  "Summary Judgment": {
-    "civil_procedure": [5, 12, 18],
-    "all_references": [5, 12, 18, 22]
+  "case_law_references": {
+    "People v. Smith": [10, 25],
+    "Jones v. ABC Corp.": [15]
   },
-  "New York Civil Practice Law § 3212": {
-    "ny_statutes": [12],
-    "all_references": [12]
-  }
+  "statutory_references": {
+    "CPLR § 3212": [5, 12, 18],
+    "New York Judiciary Law § 487": [22]
+  },
+  "subject_matter_index": {
+    "Summary Judgment": {
+      "civil_procedure": [5, 12, 18],
+      "all_references": [5, 12, 18]
+    },
+    "Negligence": {
+      "torts": [30, 45],
+      "all_references": [30, 45]
+    }
+  },
+  "_cross_references": {}
 }
 ```
 

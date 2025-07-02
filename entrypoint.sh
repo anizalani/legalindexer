@@ -1,4 +1,3 @@
-#ventrypoint.sh
 
 #!/bin/bash
 
@@ -31,9 +30,9 @@ mkdir -p "$OUTPUT_DIR"
 # Build command arguments
 ARGS=("$INPUT_PDF" "-o" "$OUTPUT_FILE")
 
-# Add JSON format flag if requested
-if [ "${OUTPUT_FORMAT,,}" = "json" ]; then
-    ARGS+=("--json")
+# Add format flag if provided
+if [ -n "$OUTPUT_FORMAT" ]; then
+    ARGS+=("--format" "$OUTPUT_FORMAT")
 fi
 
 # Add no-subcategories flag if disabled
@@ -46,12 +45,18 @@ if [ "${SHOW_STATS,,}" = "true" ]; then
     ARGS+=("--stats")
 fi
 
+# Add page offset if provided
+if [ -n "$PAGE_OFFSET" ]; then
+    ARGS+=("--page-offset" "$PAGE_OFFSET")
+fi
+
 echo "Starting Legal Index Generator..."
 echo "Input PDF: $INPUT_PDF"
 echo "Output File: $OUTPUT_FILE"
 echo "Output Format: $OUTPUT_FORMAT"
 echo "Include Subcategories: $INCLUDE_SUBCATEGORIES"
 echo "Show Stats: $SHOW_STATS"
+echo "Page Offset: $PAGE_OFFSET"
 
 # Load custom terms if provided
 if [ -n "$CUSTOM_TERMS_FILE" ] && [ -f "$CUSTOM_TERMS_FILE" ]; then
@@ -59,11 +64,11 @@ if [ -n "$CUSTOM_TERMS_FILE" ] && [ -f "$CUSTOM_TERMS_FILE" ]; then
     # Note: You'd need to modify the Python script to accept custom terms file
 fi
 
-echo "Running command: python legal_index.py ${ARGS[*]}"
+echo "Running command: legal-indexer ${ARGS[*]}"
 echo "----------------------------------------"
 
 # Execute the legal indexer
-python legal_index.py "${ARGS[@]}"
+legal-indexer "${ARGS[@]}"
 
 # Verify output was created
 if [ -f "$OUTPUT_FILE" ]; then
