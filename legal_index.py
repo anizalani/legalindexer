@@ -297,7 +297,22 @@ class LegalIndexGenerator:
     self.page_content = self.extract_text_from_pdf(pdf_path)
     self.internal_page_map = self.extract_internal_page_numbers(pdf_path)
     total_pages = len(self.page_content)
-        
+
+        if not all_pages:
+            continue
+
+        output += f"{term}\n"
+
+        if include_subcategories and len(subcategories) > 1:
+            # Show specific subcategories
+            for subcat, pages in sorted(subcategories.items()):
+                if subcat != 'all_references' and pages:
+                    sub_pages = sorted(list(pages))
+                    output += f"  {subcat.replace('_', ' ').title()}: {', '.join(map(str, sub_pages))}\n"
+
+        # Always show all references
+
+
         if total_pages == 0:
             print("Error: No pages extracted from PDF")
             return
