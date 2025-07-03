@@ -2,7 +2,7 @@
 FROM python:3.12-slim
 
 # Install system dependencies for PDF processing
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -25,8 +25,5 @@ ENV CUSTOM_TERMS_FILE=""
 ENV PAGE_OFFSET="0"
 
 # Create entrypoint script
-COPY entrypoint.sh .
-RUN chmod +x entrypoint.sh
-
-ENTRYPOINT ["./entrypoint.sh"]
+ENTRYPOINT ["python3", "-m", "legal_indexer.main"]
 

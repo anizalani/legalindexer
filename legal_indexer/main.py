@@ -8,13 +8,15 @@ Combines comprehensive term recognition with efficient processing.
 
 import argparse
 import sys
+import json
+import os
 from legal_indexer.extractor import extract_text_from_pdf
 from legal_indexer.indexer import LegalIndexer
-from legal_indexer.utils import save_output, get_statistics
+from legal_indexer.utils import save_output, get_statistics, get_table_of_contents
 
 class LegalIndexGenerator:
-    def __init__(self, page_offset: int = 0, terms_only: bool = False):
-        self.indexer = LegalIndexer(page_offset=page_offset, terms_only=terms_only)
+    def __init__(self, legal_terms: dict, page_offset: int = 0, terms_only: bool = False):
+        self.indexer = LegalIndexer(legal_terms=legal_terms, page_offset=page_offset, terms_only=terms_only)
         self.page_content = {}
 
     def process_document(self, pdf_path: str):
@@ -42,6 +44,22 @@ class LegalIndexGenerator:
         self.indexer.build_cross_references()
         print(f"Identified {len(self.indexer.index)} unique legal concepts and terms")
 
+def load_legal_terms(custom_terms_file: str = None) -> dict:
+    """Load legal terms from a JSON file."""
+    if custom_terms_file and os.path.exists(custom_terms_file):
+        terms_file = custom_terms_file
+    else:
+        # Default path relative to the script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        terms_file = os.path.join(script_dir, 'legal_terms.json')
+
+    try:
+        with open(terms_file, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"Error loading legal terms from {terms_file}: {e}")
+        sys.exit(1)
+
 def main():
     parser = argparse.ArgumentParser(
         description='Generate comprehensive legal index from PDF documents',
@@ -53,6 +71,9 @@ Examples:
   python -m legal_indexer.main document.pdf --format json -o index.json
   python -m legal_indexer.main document.pdf --no-subcategories
   python -m legal_indexer.main document.pdf --terms-only
+  python -m legal_indexer.main document.pdf --custom-terms my_terms.json
+  python -m legal_indexer.main document.pdf --columns 2
+  python -m legal_indexer.main document.pdf --suppress-categories subdivisions
         """
     )
     
@@ -69,10 +90,16 @@ Examples:
                        help='Print statistics about the indexing')
     parser.add_argument('--page-offset', type=int, default=0,
                        help='Offset for page numbers (e.g., -4 if content starts on page 5)')
+    parser.add_argument('--custom-terms', help='Path to a custom legal terms JSON file')
+    parser.add_argument('--columns', type=int, default=1, help='Number of columns for DOCX output')
+    parser.add_argument('--suppress-categories', nargs='+', help='List of categories to suppress from the output')
     
     args = parser.parse_args()
     
     try:
+        # Load legal terms
+        legal_terms = load_legal_terms(args.custom_terms)
+
         # Determine output format
         output_format = args.format
         if not output_format:
@@ -83,17 +110,27 @@ Examples:
                 output_format = 'text'
 
         # Create and run the generator
-        generator = LegalIndexGenerator(page_offset=args.page_offset, terms_only=args.terms_only)
+        generator = LegalIndexGenerator(
+            legal_terms=legal_terms,
+            page_offset=args.page_offset, 
+            terms_only=args.terms_only
+        )
         generator.process_document(args.input_pdf)
         
+        # Get Table of Contents
+        toc = get_table_of_contents(args.input_pdf, args.page_offset)
+
         # Save output
         save_output(
             args.output, 
             generator.indexer.index,
             generator.indexer.cross_references,
+            toc,
             format=output_format, 
             include_subcategories=not args.no_subcategories,
-            terms_only=args.terms_only
+            terms_only=args.terms_only,
+            columns=args.columns,
+            suppress_categories=args.suppress_categories
         )
         
         # Print statistics if requested

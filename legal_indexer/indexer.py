@@ -1,11 +1,11 @@
 import re
 from collections import defaultdict
 from typing import Dict, List
-from legal_indexer.config import STATUTORY_PATTERNS, CASE_LAW_PATTERNS, GENERAL_PATTERNS, PHRASE_PATTERNS, DEFAULT_LEGAL_TERMS
+from legal_indexer.config import STATUTORY_PATTERNS, CASE_LAW_PATTERNS, GENERAL_PATTERNS, PHRASE_PATTERNS
 
 class LegalIndexer:
-    def __init__(self, legal_terms: Dict[str, List[str]] = None, page_offset: int = 0, terms_only: bool = False):
-        self.legal_terms = legal_terms or DEFAULT_LEGAL_TERMS
+    def __init__(self, legal_terms: Dict[str, List[str]], page_offset: int = 0, terms_only: bool = False):
+        self.legal_terms = legal_terms
         self.index = defaultdict(lambda: defaultdict(set))
         self.cross_references = defaultdict(set)
         self.page_offset = page_offset
@@ -13,7 +13,7 @@ class LegalIndexer:
 
     def identify_legal_concepts(self, text: str, page_num: int):
         """Identify and index legal concepts with improved accuracy."""
-        page_num += self.page_offset
+        page_num -= self.page_offset
 
         if not self.terms_only:
             # Process statutory patterns
@@ -54,7 +54,7 @@ class LegalIndexer:
 
     def extract_key_phrases(self, text: str, page_num: int):
         """Extract important legal phrases."""
-        page_num += self.page_offset
+        page_num -= self.page_offset
         for pattern in PHRASE_PATTERNS:
             for match in re.finditer(pattern, text, re.IGNORECASE):
                 phrase = match.group().title()

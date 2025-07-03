@@ -1,26 +1,99 @@
 
 import json
 from collections import defaultdict
-from typing import Dict
+from typing import Dict, List
 import csv
 import fitz  # PyMuPDF
 from docx import Document
+from docx.shared import Inches
+from docx.oxml.section import CT_SectPr
+from docx.oxml.text.paragraph import CT_P
+from docx.oxml.table import CT_Tbl
 from lxml import etree
+import re
+
+def get_table_of_contents(pdf_path: str, page_offset: int) -> Dict:
+    """Extract a table of contents from the PDF based on font size."""
+    doc = fitz.open(pdf_path)
+    toc = {}
+    current_headings = [None, None, None, None]
+
+    for page_num, page in enumerate(doc):
+        blocks = page.get_text("dict")
+        for block in blocks["blocks"]:
+            if "lines" in block:
+                for line in block["lines"]:
+                    if "spans" in line:
+                        for span in line["spans"]:
+                            font_size = round(span["size"])
+                            text = span["text"].strip()
+                            if text and not text.isnumeric():
+                                # Clean statutory references from headings
+                                text = re.sub(r'§\s*\d+(\.\d+)?', '', text).strip()
+                                
+                                # Level 1: ALL CAPS, bold/heavy font
+                                if span["font"].lower().find("bold") > -1 or span["font"].lower().find("heavy") > -1:
+                                    if all(c.isupper() or not c.isalpha() for c in text):
+                                        current_headings[0] = text
+                                        current_headings[1] = None
+                                        current_headings[2] = None
+                                        current_headings[3] = None
+                                        if text not in toc:
+                                            toc[text] = {}
+                                
+                                # Level 2: Title Case, bold/heavy font
+                                elif span["font"].lower().find("bold") > -1 or span["font"].lower().find("heavy") > -1:
+                                    if text.istitle():
+                                        current_headings[1] = text
+                                        current_headings[2] = None
+                                        current_headings[3] = None
+                                        if current_headings[0]:
+                                            if text not in toc[current_headings[0]]:
+                                                toc[current_headings[0]][text] = {}
+
+                                # Level 3: Title Case, regular font
+                                elif text.istitle():
+                                    current_headings[2] = text
+                                    current_headings[3] = None
+                                    if current_headings[0] and current_headings[1]:
+                                        if text not in toc[current_headings[0]][current_headings[1]]:
+                                            toc[current_headings[0]][current_headings[1]][text] = page_num - page_offset + 1
+                                
+                                # Level 4: Normal case
+                                else:
+                                    current_headings[3] = text
+                                    if current_headings[0] and current_headings[1] and current_headings[2]:
+                                        toc[current_headings[0]][current_headings[1]][current_headings[2]] = {text: page_num - page_offset + 1}
+    return toc
 
 class Exporter:
-    def __init__(self, index: Dict, cross_references: Dict, terms_only: bool = False):
-        self.index = index
+    def __init__(self, index: Dict, cross_references: Dict, toc: Dict, terms_only: bool = False, suppress_categories: List[str] = None):
         self.cross_references = cross_references
         self.terms_only = terms_only
-        
+        self.suppress_categories = suppress_categories or []
+        self.index = self._filter_index(index)
+        self.toc = toc
+
         if self.terms_only:
             self.case_law_references = {}
             self.statutory_references = {}
-            self.subject_matter_index = {k: v for k, v in index.items()}
+            self.subject_matter_index = {k: v for k, v in self.index.items()}
         else:
-            self.case_law_references = {k: v for k, v in index.items() if 'case_law_references' in v}
-            self.statutory_references = {k: v for k, v in index.items() if 'statutory_references' in v}
-            self.subject_matter_index = {k: v for k, v in index.items() if 'case_law_references' not in v and 'statutory_references' not in v}
+            self.case_law_references = {k: v for k, v in self.index.items() if 'case_law_references' in v}
+            self.statutory_references = {k: v for k, v in self.index.items() if 'statutory_references' in v}
+            self.subject_matter_index = {k: v for k, v in self.index.items() if 'case_law_references' not in v and 'statutory_references' not in v}
+
+    def _filter_index(self, index: Dict) -> Dict:
+        """Filter out suppressed categories from the index."""
+        if not self.suppress_categories:
+            return index
+        
+        filtered_index = defaultdict(lambda: defaultdict(set))
+        for term, data in index.items():
+            for category, pages in data.items():
+                if category not in self.suppress_categories:
+                    filtered_index[term][category].update(pages)
+        return {k: v for k, v in filtered_index.items() if v}
 
     def _format_entry(self, term, pages):
         return f"{term}: {', '.join(map(str, sorted(list(pages))))}"
@@ -30,20 +103,39 @@ class Exporter:
         output = "COMPREHENSIVE LEGAL INDEX\n"
         output += "=" * 50 + "\n\n"
 
+        # Table of Contents
+        output += "TABLE OF CONTENTS\n"
+        output += "-" * 50 + "\n"
+        for l1, l2_dict in sorted(self.toc.items()):
+            output += f"{l1}\n"
+            for l2, l3_dict in sorted(l2_dict.items()):
+                output += f"  {l2}\n"
+                for l3, l4_val in sorted(l3_dict.items()):
+                    if isinstance(l4_val, dict):
+                        output += f"    {l3}: {list(l4_val.values())[0]}\n"
+                        for l4, page in sorted(l4_val.items()):
+                             output += f"      {l4}: {page}\n"
+                    else:
+                        output += f"    {l3}: {l4_val}\n"
+        output += "\n"
+
+
         if not self.terms_only:
             # Case Law References
-            output += "CASE LAW REFERENCES\n"
-            output += "-" * 50 + "\n"
-            for term, data in sorted(self.case_law_references.items()):
-                output += self._format_entry(term, data['all_references']) + "\n"
-            output += "\n"
+            if 'case_law_references' not in self.suppress_categories:
+                output += "CASE LAW REFERENCES\n"
+                output += "-" * 50 + "\n"
+                for term, data in sorted(self.case_law_references.items()):
+                    output += self._format_entry(term, data['all_references']) + "\n"
+                output += "\n"
 
             # Statutory References
-            output += "STATUTORY REFERENCES\n"
-            output += "-" * 50 + "\n"
-            for term, data in sorted(self.statutory_references.items()):
-                output += self._format_entry(term, data['all_references']) + "\n"
-            output += "\n"
+            if 'statutory_references' not in self.suppress_categories:
+                output += "STATUTORY REFERENCES\n"
+                output += "-" * 50 + "\n"
+                for term, data in sorted(self.statutory_references.items()):
+                    output += self._format_entry(term, data['all_references']) + "\n"
+                output += "\n"
 
         # Index by Subject
         output += "INDEX BY SUBJECT\n"
@@ -52,7 +144,7 @@ class Exporter:
         subject_index = defaultdict(list)
         for term, data in sorted(self.subject_matter_index.items()):
             for category in data:
-                if category != 'all_references':
+                if category != 'all_references' and category not in self.suppress_categories:
                     subject_index[category].append((term, data['all_references']))
         
         for category, terms in sorted(subject_index.items()):
@@ -75,11 +167,13 @@ class Exporter:
         """Convert index to JSON format with the new structure."""
         if self.terms_only:
             json_data = {
+                'table_of_contents': self.toc,
                 'subject_matter_index': {k: {cat: sorted(list(pages)) for cat, pages in v.items()} for k, v in self.subject_matter_index.items()},
                 '_cross_references': {k: sorted(list(v)) for k, v in self.cross_references.items()}
             }
         else:
             json_data = {
+                'table_of_contents': self.toc,
                 'case_law_references': {k: sorted(list(v['all_references'])) for k, v in self.case_law_references.items()},
                 'statutory_references': {k: sorted(list(v['all_references'])) for k, v in self.statutory_references.items()},
                 'subject_matter_index': {k: {cat: sorted(list(pages)) for cat, pages in v.items()} for k, v in self.subject_matter_index.items()},
@@ -101,28 +195,51 @@ class Exporter:
         doc.save(path)
         doc.close()
 
-    def to_docx(self, path: str):
+    def to_docx(self, path: str, columns: int = 1):
         """Generate a .docx version of the index."""
         doc = Document()
+        section = doc.sections[0]
+        
+        if columns > 1:
+            sectPr = section._sectPr
+            cols = sectPr.xpath('./w:cols')[0]
+            cols.set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}num', str(columns))
+
         doc.add_heading('Comprehensive Legal Index', 0)
+
+        # Table of Contents
+        doc.add_heading('Table of Contents', level=1)
+        for l1, l2_dict in sorted(self.toc.items()):
+            doc.add_paragraph(l1, style='Heading 2')
+            for l2, l3_dict in sorted(l2_dict.items()):
+                doc.add_paragraph(l2, style='Heading 3')
+                for l3, l4_val in sorted(l3_dict.items()):
+                    if isinstance(l4_val, dict):
+                        doc.add_paragraph(f"{l3}: {list(l4_val.values())[0]}", style='Heading 4')
+                        for l4, page in sorted(l4_val.items()):
+                             doc.add_paragraph(f"{l4}: {page}", style='Normal')
+                    else:
+                        doc.add_paragraph(f"{l3}: {l4_val}", style='Heading 4')
         
         if not self.terms_only:
             # Case Law References
-            doc.add_heading('Case Law References', level=1)
-            for term, data in sorted(self.case_law_references.items()):
-                doc.add_paragraph(self._format_entry(term, data['all_references']))
+            if 'case_law_references' not in self.suppress_categories:
+                doc.add_heading('Case Law References', level=1)
+                for term, data in sorted(self.case_law_references.items()):
+                    doc.add_paragraph(self._format_entry(term, data['all_references']))
 
             # Statutory References
-            doc.add_heading('Statutory References', level=1)
-            for term, data in sorted(self.statutory_references.items()):
-                doc.add_paragraph(self._format_entry(term, data['all_references']))
+            if 'statutory_references' not in self.suppress_categories:
+                doc.add_heading('Statutory References', level=1)
+                for term, data in sorted(self.statutory_references.items()):
+                    doc.add_paragraph(self._format_entry(term, data['all_references']))
 
         # Index by Subject
         doc.add_heading('Index by Subject', level=1)
         subject_index = defaultdict(list)
         for term, data in sorted(self.subject_matter_index.items()):
             for category in data:
-                if category != 'all_references':
+                if category != 'all_references' and category not in self.suppress_categories:
                     subject_index[category].append((term, data['all_references']))
         
         for category, terms in sorted(subject_index.items()):
@@ -147,31 +264,48 @@ class Exporter:
             index_source = self.subject_matter_index if self.terms_only else self.index
             for term, data in sorted(index_source.items()):
                 for cat, pages in data.items():
-                    if pages:
+                    if pages and cat not in self.suppress_categories:
                         writer.writerow([term, cat, ', '.join(map(str, sorted(list(pages))))])
 
     def to_xml(self, path: str):
         """Generate an XML version of the index."""
         root = etree.Element('LegalIndex')
         
+        # Table of Contents
+        toc_root = etree.SubElement(root, 'TableOfContents')
+        for l1, l2_dict in sorted(self.toc.items()):
+            l1_elem = etree.SubElement(toc_root, 'Heading1', name=l1)
+            for l2, l3_dict in sorted(l2_dict.items()):
+                l2_elem = etree.SubElement(l1_elem, 'Heading2', name=l2)
+                for l3, l4_val in sorted(l3_dict.items()):
+                    if isinstance(l4_val, dict):
+                        l3_elem = etree.SubElement(l2_elem, 'Heading3', name=l3, page=str(list(l4_val.values())[0]))
+                        for l4, page in sorted(l4_val.items()):
+                            etree.SubElement(l3_elem, 'Heading4', name=l4, page=str(page))
+                    else:
+                        etree.SubElement(l2_elem, 'Heading3', name=l3, page=str(l4_val))
+
         if not self.terms_only:
             # Case Law
-            case_law_root = etree.SubElement(root, 'CaseLawReferences')
-            for term, data in sorted(self.case_law_references.items()):
-                etree.SubElement(case_law_root, 'Reference', name=term).text = ', '.join(map(str, sorted(list(data['all_references']))))
+            if 'case_law_references' not in self.suppress_categories:
+                case_law_root = etree.SubElement(root, 'CaseLawReferences')
+                for term, data in sorted(self.case_law_references.items()):
+                    etree.SubElement(case_law_root, 'Reference', name=term).text = ', '.join(map(str, sorted(list(data['all_references']))))
 
             # Statutory
-            statutory_root = etree.SubElement(root, 'StatutoryReferences')
-            for term, data in sorted(self.statutory_references.items()):
-                etree.SubElement(statutory_root, 'Reference', name=term).text = ', '.join(map(str, sorted(list(data['all_references']))))
+            if 'statutory_references' not in self.suppress_categories:
+                statutory_root = etree.SubElement(root, 'StatutoryReferences')
+                for term, data in sorted(self.statutory_references.items()):
+                    etree.SubElement(statutory_root, 'Reference', name=term).text = ', '.join(map(str, sorted(list(data['all_references']))))
 
         # Subject Matter
         subject_root = etree.SubElement(root, 'SubjectMatterIndex')
         for term, data in sorted(self.subject_matter_index.items()):
             term_element = etree.SubElement(subject_root, 'Term', name=term)
             for cat, pages in data.items():
-                cat_element = etree.SubElement(term_element, 'Category', name=cat)
-                cat_element.text = ', '.join(map(str, sorted(list(pages))))
+                if cat not in self.suppress_categories:
+                    cat_element = etree.SubElement(term_element, 'Category', name=cat)
+                    cat_element.text = ', '.join(map(str, sorted(list(pages))))
 
         with open(path, 'wb') as f:
             f.write(etree.tostring(root, pretty_print=True, xml_declaration=True, encoding='UTF-8'))
@@ -181,22 +315,40 @@ class Exporter:
         with open(path, 'w', encoding='utf-8') as f:
             f.write("# Comprehensive Legal Index\n\n")
 
-            if not self.terms_only:
-                f.write("## Case Law References\n")
-                for term, data in sorted(self.case_law_references.items()):
-                    f.write(f"- {self._format_entry(term, data['all_references'])}\n")
-                f.write("\n")
+            # Table of Contents
+            f.write("## Table of Contents\n")
+            for l1, l2_dict in sorted(self.toc.items()):
+                f.write(f"### {l1}\n")
+                for l2, l3_dict in sorted(l2_dict.items()):
+                    f.write(f"#### {l2}\n")
+                    for l3, l4_val in sorted(l3_dict.items()):
+                        if isinstance(l4_val, dict):
+                            f.write(f"- {l3}: {list(l4_val.values())[0]}\n")
+                            for l4, page in sorted(l4_val.items()):
+                                f.write(f"  - {l4}: {page}\n")
+                        else:
+                            f.write(f"- {l3}: {l4_val}\n")
+            f.write("\n")
 
-                f.write("## Statutory References\n")
-                for term, data in sorted(self.statutory_references.items()):
-                    f.write(f"- {self._format_entry(term, data['all_references'])}\n")
-                f.write("\n")
+
+            if not self.terms_only:
+                if 'case_law_references' not in self.suppress_categories:
+                    f.write("## Case Law References\n")
+                    for term, data in sorted(self.case_law_references.items()):
+                        f.write(f"- {self._format_entry(term, data['all_references'])}\n")
+                    f.write("\n")
+
+                if 'statutory_references' not in self.suppress_categories:
+                    f.write("## Statutory References\n")
+                    for term, data in sorted(self.statutory_references.items()):
+                        f.write(f"- {self._format_entry(term, data['all_references'])}\n")
+                    f.write("\n")
 
             f.write("## Index by Subject\n")
             subject_index = defaultdict(list)
             for term, data in sorted(self.subject_matter_index.items()):
                 for category in data:
-                    if category != 'all_references':
+                    if category != 'all_references' and category not in self.suppress_categories:
                         subject_index[category].append((term, data['all_references']))
             
             for category, terms in sorted(subject_index.items()):
@@ -210,9 +362,9 @@ class Exporter:
             for term, data in sorted(index_source.items()):
                 f.write(f"- {self._format_entry(term, data['all_references'])}\n")
 
-def save_output(path: str, index: Dict, cross_references: Dict, format: str, include_subcategories: bool = True, terms_only: bool = False):
+def save_output(path: str, index: Dict, cross_references: Dict, toc: Dict, format: str, include_subcategories: bool = True, terms_only: bool = False, columns: int = 1, suppress_categories: List[str] = None):
     """Save index output in the specified format."""
-    exporter = Exporter(index, cross_references, terms_only=terms_only)
+    exporter = Exporter(index, cross_references, toc, terms_only=terms_only, suppress_categories=suppress_categories)
     
     try:
         if format == 'text':
@@ -224,7 +376,7 @@ def save_output(path: str, index: Dict, cross_references: Dict, format: str, inc
         elif format == 'pdf':
             exporter.to_pdf(path)
         elif format == 'docx':
-            exporter.to_docx(path)
+            exporter.to_docx(path, columns=columns)
         elif format == 'csv':
             exporter.to_csv(path)
         elif format == 'xml':

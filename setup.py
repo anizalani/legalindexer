@@ -10,6 +10,8 @@ setup(
         'PyPDF2==3.0.1',
         'python-docx==1.1.2',
         'lxml==5.2.2',
+        'pytesseract==0.3.10',
+        'Pillow==10.4.0',
     ],
     entry_points={
         'console_scripts': [
