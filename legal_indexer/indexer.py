@@ -6,10 +6,25 @@ from legal_indexer.config import STATUTORY_PATTERNS, CASE_LAW_PATTERNS, GENERAL_
 class LegalIndexer:
     def __init__(self, legal_terms: Dict[str, List[str]], page_offset: int = 0, terms_only: bool = False):
         self.legal_terms = legal_terms
-        self.index = defaultdict(lambda: defaultdict(set))
+        self.index = defaultdict(lambda: defaultdict(list))
         self.cross_references = defaultdict(set)
         self.page_offset = page_offset
         self.terms_only = terms_only
+
+    def _add_to_index(self, term: str, category: str, page_num: int, match: re.Match, text: str):
+        """Add a term to the index with context."""
+        context_window = 100
+        start = max(0, match.start() - context_window)
+        end = min(len(text), match.end() + context_window)
+        context = text[start:end].strip().replace('\n', ' ')
+        
+        entry = (page_num, context)
+        
+        # Avoid duplicate entries for the same page and context
+        if entry not in self.index[term][category]:
+            self.index[term][category].append(entry)
+        if entry not in self.index[term]['all_references']:
+            self.index[term]['all_references'].append(entry)
 
     def identify_legal_concepts(self, text: str, page_num: int):
         """Identify and index legal concepts with improved accuracy."""
@@ -22,8 +37,7 @@ class LegalIndexer:
                     for match in re.finditer(pattern, text, re.IGNORECASE):
                         term = match.group().strip()
                         if not term.isnumeric():
-                            self.index[term][category].add(page_num)
-                            self.index[term]['all_references'].add(page_num)
+                            self._add_to_index(term, category, page_num, match, text)
 
             # Process case law patterns
             for category, patterns in CASE_LAW_PATTERNS.items():
@@ -31,26 +45,23 @@ class LegalIndexer:
                     for match in re.finditer(pattern, text, re.IGNORECASE):
                         term = match.group().strip()
                         if not term.isnumeric():
-                            self.index[term][category].add(page_num)
-                            self.index[term]['all_references'].add(page_num)
+                            self._add_to_index(term, category, page_num, match, text)
 
         # Process general patterns
         for category, pattern in GENERAL_PATTERNS.items():
             for match in re.finditer(pattern, text, re.IGNORECASE):
                 term = match.group().strip()
                 if not term.isnumeric():
-                    self.index[term][category].add(page_num)
-                    self.index[term]['all_references'].add(page_num)
+                    self._add_to_index(term, category, page_num, match, text)
 
         # Index predefined legal terms
         text_lower = text.lower()
         for category, terms in self.legal_terms.items():
             for term in terms:
                 pattern = rf'\b{re.escape(term.lower())}\b'
-                if re.search(pattern, text_lower):
+                for match in re.finditer(pattern, text_lower, re.IGNORECASE):
                     formatted_term = term.title()
-                    self.index[formatted_term][category].add(page_num)
-                    self.index[formatted_term]['all_references'].add(page_num)
+                    self._add_to_index(formatted_term, category, page_num, match, text)
 
     def extract_key_phrases(self, text: str, page_num: int):
         """Extract important legal phrases."""
@@ -59,8 +70,7 @@ class LegalIndexer:
             for match in re.finditer(pattern, text, re.IGNORECASE):
                 phrase = match.group().title()
                 if not phrase.isnumeric():
-                    self.index[phrase]['key_phrases'].add(page_num)
-                    self.index[phrase]['all_references'].add(page_num)
+                    self._add_to_index(phrase, 'key_phrases', page_num, match, text)
 
     def build_cross_references(self):
         """Build cross-references between related terms."""

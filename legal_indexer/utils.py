@@ -88,14 +88,14 @@ class Exporter:
         if not self.suppress_categories:
             return index
         
-        filtered_index = defaultdict(lambda: defaultdict(set))
+        filtered_index = defaultdict(lambda: defaultdict(list))
         for term, data in index.items():
-            new_all_references = set()
+            new_all_references = []
             # First, build the new filtered categories
             for category, pages in data.items():
                 if category != 'all_references' and category not in self.suppress_categories:
-                    filtered_index[term][category].update(pages)
-                    new_all_references.update(pages)
+                    filtered_index[term][category].extend(pages)
+                    new_all_references.extend(pages)
             
             # If there are any remaining categories, add the new 'all_references'
             if filtered_index[term]:
@@ -103,8 +103,14 @@ class Exporter:
 
         return {k: v for k, v in filtered_index.items() if v}
 
-    def _format_entry(self, term, pages):
-        return f"{term}: {', '.join(map(str, sorted(list(pages))))}"
+    def _format_entry(self, term, entries):
+        if len(entries) == 1:
+            return f"{term}: {entries[0][0]}"
+        else:
+            output = f"{term}:\n"
+            for page, context in sorted(entries):
+                output += f"  - p. {page}: \"...{context}...\"\n"
+            return output
 
     def to_text(self, include_subcategories: bool = True) -> str:
         """Generate formatted index with the new structure."""
@@ -157,8 +163,8 @@ class Exporter:
         
         for category, terms in sorted(subject_index.items()):
             output += f"\n-- {category.replace('_', ' ').title()} --\n"
-            for term, pages in sorted(terms):
-                output += self._format_entry(term, pages) + "\n"
+            for term, entries in sorted(terms):
+                output += self._format_entry(term, entries) + "\n"
         output += "\n"
 
         # Alphabetical Index
@@ -176,15 +182,15 @@ class Exporter:
         if self.terms_only:
             json_data = {
                 'table_of_contents': self.toc,
-                'subject_matter_index': {k: {cat: sorted(list(pages)) for cat, pages in v.items()} for k, v in self.subject_matter_index.items()},
+                'subject_matter_index': {k: {cat: sorted(pages) for cat, pages in v.items()} for k, v in self.subject_matter_index.items()},
                 '_cross_references': {k: sorted(list(v)) for k, v in self.cross_references.items()}
             }
         else:
             json_data = {
                 'table_of_contents': self.toc,
-                'case_law_references': {k: sorted(list(v['all_references'])) for k, v in self.case_law_references.items()},
-                'statutory_references': {k: sorted(list(v['all_references'])) for k, v in self.statutory_references.items()},
-                'subject_matter_index': {k: {cat: sorted(list(pages)) for cat, pages in v.items()} for k, v in self.subject_matter_index.items()},
+                'case_law_references': {k: sorted(v['all_references']) for k, v in self.case_law_references.items()},
+                'statutory_references': {k: sorted(v['all_references']) for k, v in self.statutory_references.items()},
+                'subject_matter_index': {k: {cat: sorted(pages) for cat, pages in v.items()} for k, v in self.subject_matter_index.items()},
                 '_cross_references': {k: sorted(list(v)) for k, v in self.cross_references.items()}
             }
         return json.dumps(json_data, indent=2, ensure_ascii=False)
@@ -252,8 +258,8 @@ class Exporter:
         
         for category, terms in sorted(subject_index.items()):
             doc.add_heading(category.replace('_', ' ').title(), level=2)
-            for term, pages in sorted(terms):
-                doc.add_paragraph(self._format_entry(term, pages))
+            for term, entries in sorted(terms):
+                doc.add_paragraph(self._format_entry(term, entries))
 
         # Alphabetical Index
         doc.add_heading('Alphabetical Index', level=1)
@@ -267,13 +273,14 @@ class Exporter:
         """Generate a CSV version of the index."""
         with open(path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            writer.writerow(['Term', 'Category', 'Pages'])
+            writer.writerow(['Term', 'Category', 'Page', 'Context'])
             
             index_source = self.subject_matter_index if self.terms_only else self.index
             for term, data in sorted(index_source.items()):
-                for cat, pages in data.items():
-                    if pages and cat not in self.suppress_categories:
-                        writer.writerow([term, cat, ', '.join(map(str, sorted(list(pages))))])
+                for cat, entries in data.items():
+                    if entries and cat not in self.suppress_categories:
+                        for page, context in entries:
+                            writer.writerow([term, cat, page, context])
 
     def to_xml(self, path: str):
         """Generate an XML version of the index."""
@@ -298,22 +305,27 @@ class Exporter:
             if 'case_law_references' not in self.suppress_categories:
                 case_law_root = etree.SubElement(root, 'CaseLawReferences')
                 for term, data in sorted(self.case_law_references.items()):
-                    etree.SubElement(case_law_root, 'Reference', name=term).text = ', '.join(map(str, sorted(list(data['all_references']))))
+                    ref_elem = etree.SubElement(case_law_root, 'Reference', name=term)
+                    for page, context in data['all_references']:
+                        etree.SubElement(ref_elem, 'Occurrence', page=str(page)).text = context
 
             # Statutory
             if 'statutory_references' not in self.suppress_categories:
                 statutory_root = etree.SubElement(root, 'StatutoryReferences')
                 for term, data in sorted(self.statutory_references.items()):
-                    etree.SubElement(statutory_root, 'Reference', name=term).text = ', '.join(map(str, sorted(list(data['all_references']))))
+                    ref_elem = etree.SubElement(statutory_root, 'Reference', name=term)
+                    for page, context in data['all_references']:
+                        etree.SubElement(ref_elem, 'Occurrence', page=str(page)).text = context
 
         # Subject Matter
         subject_root = etree.SubElement(root, 'SubjectMatterIndex')
         for term, data in sorted(self.subject_matter_index.items()):
             term_element = etree.SubElement(subject_root, 'Term', name=term)
-            for cat, pages in data.items():
+            for cat, entries in data.items():
                 if cat not in self.suppress_categories:
                     cat_element = etree.SubElement(term_element, 'Category', name=cat)
-                    cat_element.text = ', '.join(map(str, sorted(list(pages))))
+                    for page, context in entries:
+                        etree.SubElement(cat_element, 'Occurrence', page=str(page)).text = context
 
         with open(path, 'wb') as f:
             f.write(etree.tostring(root, pretty_print=True, xml_declaration=True, encoding='UTF-8'))
@@ -361,8 +373,8 @@ class Exporter:
             
             for category, terms in sorted(subject_index.items()):
                 f.write(f"### {category.replace('_', ' ').title()}\n")
-                for term, pages in sorted(terms):
-                    f.write(f"- {self._format_entry(term, pages)}\n")
+                for term, entries in sorted(terms):
+                    f.write(f"- {self._format_entry(term, entries)}\n")
                 f.write("\n")
 
             f.write("## Alphabetical Index\n")
