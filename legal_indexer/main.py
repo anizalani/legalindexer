@@ -18,11 +18,13 @@ class LegalIndexGenerator:
     def __init__(self, legal_terms: dict, page_offset: int = 0, terms_only: bool = False):
         self.indexer = LegalIndexer(legal_terms=legal_terms, page_offset=page_offset, terms_only=terms_only)
         self.page_content = {}
+        self.toc = {}
 
     def process_document(self, pdf_path: str):
         """Main processing function with progress indication."""
         print(f"Processing document: {pdf_path}")
         
+        self.toc = get_table_of_contents(pdf_path, self.indexer.page_offset)
         self.page_content = extract_text_from_pdf(pdf_path)
         total_pages = len(self.page_content)
         
@@ -33,10 +35,24 @@ class LegalIndexGenerator:
         print(f"Extracted text from {total_pages} pages")
         
         # Process pages with progress indication
+        current_headings = [None] * 5
         for i, (page_num, text) in enumerate(self.page_content.items(), 1):
             if i % 10 == 0 or i == total_pages:
                 print(f"Processing page {i}/{total_pages}...")
-                
+            
+            # This is a simplified heading update. A more robust solution would analyze font changes.
+            for l1, l2_dict in self.toc.items():
+                for l2, l3_dict in l2_dict.items():
+                    for l3, l4_val in l3_dict.items():
+                        if isinstance(l4_val, dict):
+                            if list(l4_val.values())[0] == page_num:
+                                current_headings = [l1, l2, l3, None, None]
+                        elif l4_val == page_num:
+                            current_headings = [l1, l2, l3, None, None]
+
+
+            self.indexer.set_current_headings(current_headings)
+
             if text.strip():
                 self.indexer.identify_legal_concepts(text, page_num)
                 self.indexer.extract_key_phrases(text, page_num)
@@ -74,6 +90,7 @@ Examples:
   python -m legal_indexer.main document.pdf --custom-terms my_terms.json
   python -m legal_indexer.main document.pdf --columns 2
   python -m legal_indexer.main document.pdf --suppress-categories subdivisions
+  python -m legal_indexer.main document.pdf --context-style headings
         """
     )
     
@@ -93,6 +110,7 @@ Examples:
     parser.add_argument('--custom-terms', help='Path to a custom legal terms JSON file')
     parser.add_argument('--columns', type=int, default=1, help='Number of columns for DOCX output')
     parser.add_argument('--suppress-categories', nargs='+', help='List of categories to suppress from the output')
+    parser.add_argument('--context-style', choices=['none', 'snippet', 'headings'], default='none', help='Style of context to display for each term.')
     
     args = parser.parse_args()
     
@@ -117,20 +135,18 @@ Examples:
         )
         generator.process_document(args.input_pdf)
         
-        # Get Table of Contents
-        toc = get_table_of_contents(args.input_pdf, args.page_offset)
-
         # Save output
         save_output(
             args.output, 
             generator.indexer.index,
             generator.indexer.cross_references,
-            toc,
+            generator.toc,
             format=output_format, 
             include_subcategories=not args.no_subcategories,
             terms_only=args.terms_only,
             columns=args.columns,
-            suppress_categories=args.suppress_categories
+            suppress_categories=args.suppress_categories,
+            context_style=args.context_style
         )
         
         # Print statistics if requested

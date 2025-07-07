@@ -10,15 +10,19 @@ class LegalIndexer:
         self.cross_references = defaultdict(set)
         self.page_offset = page_offset
         self.terms_only = terms_only
+        self.current_headings = [None] * 5
+
+    def set_current_headings(self, headings: List[str]):
+        self.current_headings = headings
 
     def _add_to_index(self, term: str, category: str, page_num: int, match: re.Match, text: str):
         """Add a term to the index with context."""
         context_window = 100
         start = max(0, match.start() - context_window)
         end = min(len(text), match.end() + context_window)
-        context = text[start:end].strip().replace('\n', ' ')
+        snippet = text[start:end].strip().replace('\n', ' ')
         
-        entry = (page_num, context)
+        entry = (page_num, snippet, self.current_headings.copy())
         
         # Avoid duplicate entries for the same page and context
         if entry not in self.index[term][category]:
@@ -32,7 +36,7 @@ class LegalIndexer:
 
         if not self.terms_only:
             # Process statutory patterns
-            for category, patterns in STATUTORY_PATTERNS.items():
+            for category, patterns in STATUTORY_PATTERns.items():
                 for pattern in patterns:
                     for match in re.finditer(pattern, text, re.IGNORECASE):
                         term = match.group().strip()
@@ -86,3 +90,4 @@ class LegalIndexer:
                 for alt in alternatives:
                     if alt in self.index:
                         self.cross_references[main_term].add(alt)
+

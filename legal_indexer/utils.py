@@ -67,12 +67,13 @@ def get_table_of_contents(pdf_path: str, page_offset: int) -> Dict:
     return toc
 
 class Exporter:
-    def __init__(self, index: Dict, cross_references: Dict, toc: Dict, terms_only: bool = False, suppress_categories: List[str] = None):
+    def __init__(self, index: Dict, cross_references: Dict, toc: Dict, terms_only: bool = False, suppress_categories: List[str] = None, context_style: str = 'none'):
         self.cross_references = cross_references
         self.terms_only = terms_only
         self.suppress_categories = suppress_categories or []
         self.index = self._filter_index(index)
         self.toc = toc
+        self.context_style = context_style
 
         if self.terms_only:
             self.case_law_references = {}
@@ -104,12 +105,18 @@ class Exporter:
         return {k: v for k, v in filtered_index.items() if v}
 
     def _format_entry(self, term, entries):
-        if len(entries) == 1:
-            return f"{term}: {entries[0][0]}"
-        else:
+        if self.context_style == 'none' or len(entries) == 1:
+            pages = sorted(list(set([entry[0] for entry in entries])))
+            return f"{term}: {', '.join(map(str, pages))}"
+        elif self.context_style == 'snippet':
             output = f"{term}:\n"
-            for page, context in sorted(entries):
+            for page, context, _ in sorted(entries):
                 output += f"  - p. {page}: \"...{context}...\"\n"
+            return output
+        elif self.context_style == 'headings':
+            output = f"{term}:\n"
+            for page, _, headings in sorted(entries):
+                output += f"  - p. {page}: {' > '.join(filter(None, headings))}\n"
             return output
 
     def to_text(self, include_subcategories: bool = True) -> str:
@@ -273,14 +280,14 @@ class Exporter:
         """Generate a CSV version of the index."""
         with open(path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            writer.writerow(['Term', 'Category', 'Page', 'Context'])
+            writer.writerow(['Term', 'Category', 'Page', 'Context', 'Headings'])
             
             index_source = self.subject_matter_index if self.terms_only else self.index
             for term, data in sorted(index_source.items()):
                 for cat, entries in data.items():
                     if entries and cat not in self.suppress_categories:
-                        for page, context in entries:
-                            writer.writerow([term, cat, page, context])
+                        for page, context, headings in entries:
+                            writer.writerow([term, cat, page, context, ' > '.join(filter(None, headings))])
 
     def to_xml(self, path: str):
         """Generate an XML version of the index."""
@@ -306,7 +313,7 @@ class Exporter:
                 case_law_root = etree.SubElement(root, 'CaseLawReferences')
                 for term, data in sorted(self.case_law_references.items()):
                     ref_elem = etree.SubElement(case_law_root, 'Reference', name=term)
-                    for page, context in data['all_references']:
+                    for page, context, _ in data['all_references']:
                         etree.SubElement(ref_elem, 'Occurrence', page=str(page)).text = context
 
             # Statutory
@@ -314,7 +321,7 @@ class Exporter:
                 statutory_root = etree.SubElement(root, 'StatutoryReferences')
                 for term, data in sorted(self.statutory_references.items()):
                     ref_elem = etree.SubElement(statutory_root, 'Reference', name=term)
-                    for page, context in data['all_references']:
+                    for page, context, _ in data['all_references']:
                         etree.SubElement(ref_elem, 'Occurrence', page=str(page)).text = context
 
         # Subject Matter
@@ -324,7 +331,7 @@ class Exporter:
             for cat, entries in data.items():
                 if cat not in self.suppress_categories:
                     cat_element = etree.SubElement(term_element, 'Category', name=cat)
-                    for page, context in entries:
+                    for page, context, _ in entries:
                         etree.SubElement(cat_element, 'Occurrence', page=str(page)).text = context
 
         with open(path, 'wb') as f:
@@ -382,9 +389,9 @@ class Exporter:
             for term, data in sorted(index_source.items()):
                 f.write(f"- {self._format_entry(term, data['all_references'])}\n")
 
-def save_output(path: str, index: Dict, cross_references: Dict, toc: Dict, format: str, include_subcategories: bool = True, terms_only: bool = False, columns: int = 1, suppress_categories: List[str] = None):
+def save_output(path: str, index: Dict, cross_references: Dict, toc: Dict, format: str, include_subcategories: bool = True, terms_only: bool = False, columns: int = 1, suppress_categories: List[str] = None, context_style: str = 'none'):
     """Save index output in the specified format."""
-    exporter = Exporter(index, cross_references, toc, terms_only=terms_only, suppress_categories=suppress_categories)
+    exporter = Exporter(index, cross_references, toc, terms_only=terms_only, suppress_categories=suppress_categories, context_style=context_style)
     
     try:
         if format == 'text':
