@@ -90,9 +90,17 @@ class Exporter:
         
         filtered_index = defaultdict(lambda: defaultdict(set))
         for term, data in index.items():
+            new_all_references = set()
+            # First, build the new filtered categories
             for category, pages in data.items():
-                if category not in self.suppress_categories:
+                if category != 'all_references' and category not in self.suppress_categories:
                     filtered_index[term][category].update(pages)
+                    new_all_references.update(pages)
+            
+            # If there are any remaining categories, add the new 'all_references'
+            if filtered_index[term]:
+                filtered_index[term]['all_references'] = new_all_references
+
         return {k: v for k, v in filtered_index.items() if v}
 
     def _format_entry(self, term, pages):
