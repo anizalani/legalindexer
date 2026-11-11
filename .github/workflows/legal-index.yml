@@ -108,12 +108,29 @@ jobs:
             exit 1
           fi
 
+      # Offline layout: $CI_ARTIFACT_ROOT/<owner>/<repo>/<run_id>/<run_attempt>/<job>/
+      # Set CI_ARTIFACT_ROOT in the runner environment or as an Actions variable.
+      # This runner's mount is /mnt/user/ci-artifacts. See README.
+      - name: Store index on offline artifact path
+        id: offline_artifacts
+        shell: bash
+        env:
+          CI_ARTIFACT_ROOT_VAR: ${{ vars.CI_ARTIFACT_ROOT }}
+          OUTPUT_FILE: ${{ github.event.inputs.output_directory }}/${{ github.event.inputs.output_filename }}
+          ARTIFACT_REPO: ${{ github.repository }}
+          ARTIFACT_RUN_ID: ${{ github.run_id }}
+          ARTIFACT_ATTEMPT: ${{ github.run_attempt }}
+          ARTIFACT_JOB: ${{ github.job }}
+        run: bash .github/scripts/store-offline-artifact.sh
+
       - name: Upload index as artifact
+        if: ${{ steps.offline_artifacts.outputs.offline != 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: legal-index-${{ github.run_number }}-${{ github.event.inputs.output_format }}
           path: ${{ github.event.inputs.output_directory }}/${{ github.event.inputs.output_filename }}
-          retention-days: 30
+          retention-days: 3
+          if-no-files-found: error
 
       - name: Cleanup
         if: always()

@@ -137,10 +137,10 @@ legal-indexer --help
 
 ## GitHub Actions Integration
 
-This repository includes a GitHub Actions workflow for automated processing:
+This repository includes a GitHub Actions workflow that runs on a self-hosted runner:
 
 1. **Go to Actions tab** in your GitHub repository
-2. **Select "Legal Document Index Generator"**
+2. **Select "Legal Document Index Generator (Docker)"**
 3. **Click "Run workflow"**
 4. **Configure inputs**:
    - Input PDF path
@@ -148,9 +148,40 @@ This repository includes a GitHub Actions workflow for automated processing:
    - Format (text/json)
    - Include subcategories
    - Show statistics
-   - Output directory
+   - Output directory (default `/mnt/user/legal_indexes` on the runner)
 
-The workflow will process your PDF and save the index as a downloadable artifact.
+The workflow writes the generated index into that output directory. It also keeps a per-run copy on local storage when the runner artifact path below is writable.
+
+### Self-hosted runner artifact mount
+
+GitHub artifact upload is skipped when `CI_ARTIFACT_ROOT` is an absolute path to a directory that already exists and is writable by the runner user. On this self-hosted runner, mount the Unraid user share `ci-artifacts` and set the variable to:
+
+```
+/mnt/user/ci-artifacts
+```
+
+On the Unraid host that path is the share itself. If the runner is another machine, mount the `ci-artifacts` share at `/mnt/user/ci-artifacts` before jobs start. The runner user needs write permission on that directory. The workflow creates only the per-run subdirectories; create the share and the mount on the host.
+
+Set the path in either place. When the Actions variable is non-empty, it wins:
+
+- Runner environment variable: `CI_ARTIFACT_ROOT=/mnt/user/ci-artifacts`
+- GitHub Actions variable (repository or organization): `CI_ARTIFACT_ROOT` with the same value
+
+Each successful run copies the index to:
+
+```
+/mnt/user/ci-artifacts/<owner>/<repo>/<run_id>/<run_attempt>/<job>/<output filename>
+```
+
+`<owner>/<repo>` is `github.repository`, `<run_id>` is the workflow run id, `<run_attempt>` is the attempt number, and `<job>` is the job id (`generate-index`). Example:
+
+```
+/mnt/user/ci-artifacts/anizalani/legalindexer/1234567890/1/generate-index/legal_index.txt
+```
+
+Copies are additive. Older run directories on the share stay in place, and artifacts already stored on GitHub stay in place.
+
+When `CI_ARTIFACT_ROOT` is unset, is not an absolute writable directory, or the copy does not succeed, the workflow uploads that same file with `actions/upload-artifact` and `retention-days: 3`.
 
 ## Recognized Legal Content
 
@@ -248,6 +279,8 @@ legal-index-generator/
 ├── legal_index.py            # Main indexer script
 ├── requirements.txt          # Python dependencies
 ├── .github/
+│   ├── scripts/
+│   │   └── store-offline-artifact.sh  # Offline CI artifact copy
 │   └── workflows/
 │       └── legal-index.yml   # GitHub Actions workflow
 ├── input/                    # Place PDFs here (for Docker Compose)
@@ -300,6 +333,11 @@ Edit the `LEGAL_PATTERNS` and `PHRASE_PATTERNS` dictionaries in `legal_index.py`
 **Permission Errors**
 - Check output directory permissions
 - Use appropriate volume mounting in Docker
+
+**Offline CI artifacts missing from the share**
+- Confirm the self-hosted runner has `/mnt/user/ci-artifacts` mounted and writable by the runner user
+- Confirm `CI_ARTIFACT_ROOT` is `/mnt/user/ci-artifacts` in the runner environment or as a GitHub Actions variable
+- When that path is unavailable, the run uploads a GitHub artifact kept for 3 days
 
 ### Docker Troubleshooting
 
